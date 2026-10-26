@@ -73,39 +73,55 @@ def main():
         st.error(f"Error loading presets data: {e}")
         st.stop()
 
+    normal_preset = presets_df[presets_df['Preset'] == 'Normal'].iloc[0]
+
+    # Initialize session state for high-variance sensors
+    if 's_14' not in st.session_state:
+        st.session_state['s_14'] = float(normal_preset['s_14'])
+    if 's_4' not in st.session_state:
+        st.session_state['s_4'] = float(normal_preset['s_4'])
+    if 's_9' not in st.session_state:
+        st.session_state['s_9'] = float(normal_preset['s_9'])
+    if 's_3' not in st.session_state:
+        st.session_state['s_3'] = float(normal_preset['s_3'])
+    if 's_17' not in st.session_state:
+        st.session_state['s_17'] = float(normal_preset['s_17'])
+
     st.sidebar.header("Data Source Configuration")
-    mode = st.sidebar.radio("Input Mode", ["Preset Sample", "Manual Mode"])
+    what_if_simulation = st.sidebar.toggle("What-If Simulation", value=False)
 
     sample_vector = None
 
-    if mode == "Preset Sample":
+    if not what_if_simulation:
+        # Existing Selectbox behavior for normal presets
         preset_choice = st.sidebar.selectbox("Select Engine Status", ["Normal", "Degrading", "Critical"])
         selected_row = presets_df[presets_df['Preset'] == preset_choice].iloc[0]
         sample_vector = selected_row[feature_names].values.astype(np.float64)
     else:
-        st.sidebar.subheader("Adjust High-Variance Sensors")
-        # Base on the mean of the "Normal" preset for defaults
-        normal_preset = presets_df[presets_df['Preset'] == 'Normal'].iloc[0]
+        st.sidebar.subheader("What-If Analysis")
 
-        s_4_val = st.sidebar.slider("Sensor 4", min_value=1380.0, max_value=1445.0, value=float(normal_preset['s_4']))
-        s_9_val = st.sidebar.slider("Sensor 9", min_value=9020.0, max_value=9245.0, value=float(normal_preset['s_9']))
-        s_14_val = st.sidebar.slider("Sensor 14", min_value=8099.0, max_value=8295.0, value=float(normal_preset['s_14']))
-        s_3_val = st.sidebar.slider("Sensor 3", min_value=1570.0, max_value=1620.0, value=float(normal_preset['s_3']))
-        s_17_val = st.sidebar.slider("Sensor 17", min_value=388.0, max_value=400.0, value=float(normal_preset['s_17']))
+        # Reset Button functionality
+        def reset_sliders():
+            st.session_state['s_14'] = float(normal_preset['s_14'])
+            st.session_state['s_4'] = float(normal_preset['s_4'])
+            st.session_state['s_9'] = float(normal_preset['s_9'])
+            st.session_state['s_3'] = float(normal_preset['s_3'])
+            st.session_state['s_17'] = float(normal_preset['s_17'])
 
-        # Construct vector
+        st.sidebar.button("Reset", on_click=reset_sliders)
+
+        # Sliders bound directly to session state
+        st.sidebar.slider("Sensor 14", min_value=8099.0, max_value=8295.0, key="s_14")
+        st.sidebar.slider("Sensor 4", min_value=1380.0, max_value=1445.0, key="s_4")
+        st.sidebar.slider("Sensor 9", min_value=9020.0, max_value=9245.0, key="s_9")
+        st.sidebar.slider("Sensor 3", min_value=1570.0, max_value=1620.0, key="s_3")
+        st.sidebar.slider("Sensor 17", min_value=388.0, max_value=400.0, key="s_17")
+
+        # Construct vector using state values for modified sensors
         manual_vector = []
         for feat in feature_names:
-            if feat == 's_4':
-                manual_vector.append(s_4_val)
-            elif feat == 's_9':
-                manual_vector.append(s_9_val)
-            elif feat == 's_14':
-                manual_vector.append(s_14_val)
-            elif feat == 's_3':
-                manual_vector.append(s_3_val)
-            elif feat == 's_17':
-                manual_vector.append(s_17_val)
+            if feat in ['s_14', 's_4', 's_9', 's_3', 's_17']:
+                manual_vector.append(st.session_state[feat])
             else:
                 manual_vector.append(float(normal_preset[feat]))
 
