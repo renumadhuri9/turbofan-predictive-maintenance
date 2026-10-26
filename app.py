@@ -6,6 +6,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from src.explainability import get_top_fault_sensors
+from src.clustering import CustomKMeans
 
 st.set_page_config(page_title="Turbofan Predictive Maintenance", layout="wide")
 
@@ -175,17 +176,31 @@ def main():
 
             # Map back scores for the top sensors
             scores = []
+            gini_importances = []
+            raw_values = []
             for sensor in top_sensors:
                 if sensor in feature_names:
                     idx = feature_names.index(sensor)
                     scores.append(anomaly_scores[idx])
+                    gini_importances.append(original_importances[idx])
+                    raw_values.append(sample_vector[idx])
                 else:
                     scores.append(0.0)
+                    gini_importances.append(0.0)
+                    raw_values.append(0.0)
+
+            bar_df = pd.DataFrame({
+                'Sensor': top_sensors,
+                'Anomaly Score': scores,
+                'Gini Importance': gini_importances,
+                'Raw Value': raw_values
+            })
 
             fig_bar = px.bar(
-                x=top_sensors,
-                y=scores,
-                labels={'x': 'Sensor', 'y': 'Anomaly Score'},
+                bar_df,
+                x='Sensor',
+                y='Anomaly Score',
+                hover_data=['Gini Importance', 'Raw Value'],
                 title="Sensor Anomaly Scores"
             )
             st.plotly_chart(fig_bar, use_container_width=True)
@@ -215,27 +230,49 @@ def main():
                     X_base_scaled = scaler.transform(X_base)
                     X_base_pca = pca_model.transform(X_base_scaled)
 
+                    # Cluster baseline data
+                    kmeans = CustomKMeans(n_clusters=3, random_state=42)
+                    kmeans.fit(X_base_pca[:, :2])
+                    cluster_labels = kmeans.predict(X_base_pca[:, :2])
+
                     df_pca = pd.DataFrame(X_base_pca[:, :2], columns=['PCA Component 1', 'PCA Component 2'])
+                    df_pca['Cluster'] = cluster_labels
                     df_pca['Status'] = train_data['hazard_class']
 
-                    fig_scatter = px.scatter(
-                        df_pca,
-                        x='PCA Component 1',
-                        y='PCA Component 2',
-                        color='Status',
-                        color_discrete_map={'Healthy': 'green', 'Warning': 'orange', 'Critical': 'red'},
-                        title="PCA Projection (Baseline vs Current Sample)",
-                        opacity=0.6
-                    )
+                    # Map clusters to approximate health states based on the dominant class (optional context) or just color them uniquely
+                    # To keep it simple, we'll assign distinct colors to clusters and name them Cluster 0, 1, 2
+                    cluster_colors = {0: '#2ecc71', 1: '#f39c12', 2: '#e74c3c'}
+                    cluster_names = {0: 'Cluster 0', 1: 'Cluster 1', 2: 'Cluster 2'}
+
+                    fig_scatter = go.Figure()
+
+                    # Add trace for each cluster
+                    for cluster_id in sorted(df_pca['Cluster'].unique()):
+                        cluster_data = df_pca[df_pca['Cluster'] == cluster_id]
+                        fig_scatter.add_trace(go.Scatter(
+                            x=cluster_data['PCA Component 1'],
+                            y=cluster_data['PCA Component 2'],
+                            mode='markers',
+                            marker=dict(color=cluster_colors.get(cluster_id, 'grey'), size=6, opacity=0.6),
+                            name=cluster_names.get(cluster_id, f'Cluster {cluster_id}')
+                        ))
 
                     # Overlay current sample
                     fig_scatter.add_trace(go.Scatter(
                         x=[pca_sample[0, 0]],
                         y=[pca_sample[0, 1]],
                         mode='markers',
-                        marker=dict(size=15, color='black', symbol='star'),
+                        marker=dict(size=15, color='white', line=dict(color='black', width=2), symbol='star'),
                         name='Current Sample'
                     ))
+
+                    fig_scatter.update_layout(
+                        title="PCA Projection (Clustered Baseline vs Current Sample)",
+                        xaxis_title="PCA Component 1",
+                        yaxis_title="PCA Component 2",
+                        dragmode="zoom",
+                        showlegend=True
+                    )
 
                     st.plotly_chart(fig_scatter, use_container_width=True)
                 except Exception as e:

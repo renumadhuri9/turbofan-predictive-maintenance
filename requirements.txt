@@ -26,7 +26,7 @@ packaging==26.3
 pandas==3.1.0
 pillow==13.0.0
 playwright==1.58.0
-plotly==7.1.0
+plotly>=5.15.0
 pluggy==1.7.0
 protobuf==7.36.2
 pyarrow==26.0.0
