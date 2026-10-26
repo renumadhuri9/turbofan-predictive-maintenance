@@ -1,0 +1,9 @@
+Ignore artifacts via gitignore
+artifacts/*.joblib
+artifacts/*.png
+artifacts/*.csv
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
