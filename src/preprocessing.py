@@ -13,7 +13,7 @@ class CMAPSSDataPipeline:
     Data ingestion and preprocessing pipeline for NASA C-MAPSS FD001 dataset.
     """
 
-    RAW_COLUMNS = [
+    DEFAULT_RAW_COLUMNS = [
         "unit_nr",
         "time_cycles",
         "setting_1",
@@ -29,18 +29,49 @@ class CMAPSSDataPipeline:
         warning_threshold: int = 50,
         critical_threshold: int = 20,
         drop_sensors: list[str] | None = None,
+        raw_columns: list[str] | None = None,
+        unit_col: str | None = None,
+        cycle_col: str | None = None,
     ):
         self.max_rul = max_rul
         self.warning_threshold = warning_threshold
         self.critical_threshold = critical_threshold
-        self.drop_sensors = (
-            drop_sensors if drop_sensors is not None else self.DEFAULT_DROP_SENSORS
-        )
+        self.raw_columns = raw_columns if raw_columns is not None else list(self.DEFAULT_RAW_COLUMNS)
+
+        # Detect unit_col and cycle_col from raw_columns if not explicitly provided
+        if unit_col is None:
+            if "unit_nr" in self.raw_columns:
+                self.unit_col = "unit_nr"
+            elif "engine_id" in self.raw_columns:
+                self.unit_col = "engine_id"
+            else:
+                self.unit_col = self.raw_columns[0]
+        else:
+            self.unit_col = unit_col
+
+        if cycle_col is None:
+            if "time_cycles" in self.raw_columns:
+                self.cycle_col = "time_cycles"
+            elif "cycle" in self.raw_columns:
+                self.cycle_col = "cycle"
+            else:
+                self.cycle_col = self.raw_columns[1]
+        else:
+            self.cycle_col = cycle_col
+
+        if drop_sensors is not None:
+            self.drop_sensors = drop_sensors
+        else:
+            # Check if raw columns use 's_' prefix or 's' prefix
+            if "s_1" in self.raw_columns:
+                self.drop_sensors = ["s_1", "s_5", "s_10", "s_16", "s_18", "s_19"]
+            else:
+                self.drop_sensors = list(self.DEFAULT_DROP_SENSORS)
 
         self.feature_columns = [
             col
-            for col in self.RAW_COLUMNS
-            if col not in ["unit_nr", "time_cycles"] + self.drop_sensors
+            for col in self.raw_columns
+            if col not in [self.unit_col, self.cycle_col] + self.drop_sensors
         ]
 
         self.scaler = MinMaxScaler()
@@ -48,7 +79,7 @@ class CMAPSSDataPipeline:
 
     def load_raw_file(self, filepath: str | Path) -> pd.DataFrame:
         """
-        Load a C-MAPSS space-separated sensor data file using 26-column schema.
+        Load a C-MAPSS space-separated sensor data file.
         """
         filepath = Path(filepath)
         if not filepath.exists():
@@ -58,7 +89,7 @@ class CMAPSSDataPipeline:
             filepath,
             sep=r"\s+",
             header=None,
-            names=self.RAW_COLUMNS,
+            names=self.raw_columns,
             engine="python",
         )
         return df
@@ -78,16 +109,16 @@ class CMAPSSDataPipeline:
             names=["RUL_final"],
             engine="python",
         )
-        df["unit_nr"] = np.arange(1, len(df) + 1)
-        return df[["unit_nr", "RUL_final"]]
+        df[self.unit_col] = np.arange(1, len(df) + 1)
+        return df[[self.unit_col, "RUL_final"]]
 
     def calculate_train_rul(self, train_df: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate RUL for training data and cap at max_rul.
         """
         df = train_df.copy()
-        max_cycles = df.groupby("unit_nr")["time_cycles"].transform("max")
-        df["RUL_uncapped"] = max_cycles - df["time_cycles"]
+        max_cycles = df.groupby(self.unit_col)[self.cycle_col].transform("max")
+        df["RUL_uncapped"] = max_cycles - df[self.cycle_col]
         df["RUL"] = df["RUL_uncapped"].clip(upper=self.max_rul)
         return df
 
@@ -101,11 +132,11 @@ class CMAPSSDataPipeline:
         if rul_df is None:
             return df
 
-        max_cycles = df.groupby("unit_nr")["time_cycles"].transform("max")
-        df = df.merge(rul_df, on="unit_nr", how="left")
+        max_cycles = df.groupby(self.unit_col)[self.cycle_col].transform("max")
+        df = df.merge(rul_df, on=self.unit_col, how="left")
 
         # RUL at cycle t = (max_cycle_test - t) + RUL_final
-        df["RUL_uncapped"] = (max_cycles - df["time_cycles"]) + df["RUL_final"]
+        df["RUL_uncapped"] = (max_cycles - df[self.cycle_col]) + df["RUL_final"]
         df["RUL"] = df["RUL_uncapped"].clip(upper=self.max_rul)
         df = df.drop(columns=["RUL_final"])
         return df
@@ -179,11 +210,14 @@ class CMAPSSDataPipeline:
         num_train_units: int = 5,
         num_test_units: int = 5,
         seed: int = 42,
+        raw_columns: list[str] | None = None,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """
         Generate deterministic synthetic C-MAPSS dataset for unit testing without downloading.
         """
         rng = np.random.default_rng(seed)
+
+        cols = raw_columns if raw_columns is not None else CMAPSSDataPipeline.DEFAULT_RAW_COLUMNS
 
         # Generate train
         train_rows = []
@@ -204,7 +238,7 @@ class CMAPSSDataPipeline:
                 row = [unit, cycle] + list(settings) + list(sensors)
                 train_rows.append(row)
 
-        train_df = pd.DataFrame(train_rows, columns=CMAPSSDataPipeline.RAW_COLUMNS)
+        train_df = pd.DataFrame(train_rows, columns=cols)
 
         # Generate test
         test_rows = []
@@ -226,9 +260,10 @@ class CMAPSSDataPipeline:
                 row = [unit, cycle] + list(settings) + list(sensors)
                 test_rows.append(row)
 
-        test_df = pd.DataFrame(test_rows, columns=CMAPSSDataPipeline.RAW_COLUMNS)
+        test_df = pd.DataFrame(test_rows, columns=cols)
+        unit_col_name = cols[0]
         rul_df = pd.DataFrame({
-            "unit_nr": np.arange(1, num_test_units + 1),
+            unit_col_name: np.arange(1, num_test_units + 1),
             "RUL_final": test_ruls,
         })
 

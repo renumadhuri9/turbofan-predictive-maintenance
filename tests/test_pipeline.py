@@ -80,7 +80,7 @@ def test_rul_calculation_and_capping():
         }
     )
     # Fill remaining columns
-    for col in [c for c in CMAPSSDataPipeline.RAW_COLUMNS if c not in ["unit_nr", "time_cycles"]]:
+    for col in [c for c in CMAPSSDataPipeline.DEFAULT_RAW_COLUMNS if c not in ["unit_nr", "time_cycles"]]:
         df[col] = 1.0
 
     res = pipeline.calculate_train_rul(df)
@@ -104,6 +104,29 @@ def test_health_label_boundaries():
 
     expected = ["Healthy", "Healthy", "Warning", "Warning", "Critical", "Critical"]
     assert list(labels) == expected
+
+    pipeline_custom = CMAPSSDataPipeline(warning_threshold=30, critical_threshold=15)
+    rul_series_custom = pd.Series([50, 31, 30, 16, 15, 0])
+    labels_custom = pipeline_custom.assign_health_labels(rul_series_custom)
+    assert list(labels_custom) == ["Healthy", "Healthy", "Warning", "Warning", "Critical", "Critical"]
+
+
+def test_custom_column_schema():
+    custom_cols = ["engine_id", "cycle", "setting_1", "setting_2", "setting_3"] + [f"s_{i}" for i in range(1, 22)]
+    pipeline = CMAPSSDataPipeline(
+        raw_columns=custom_cols,
+        warning_threshold=30,
+        critical_threshold=15,
+    )
+
+    train_df, test_df, rul_df = CMAPSSDataPipeline.generate_synthetic_data(raw_columns=custom_cols, seed=999)
+
+    train_proc, test_proc = pipeline.fit_transform(train_df=train_df, test_df=test_df, test_rul_df=rul_df)
+
+    assert len(pipeline.feature_columns) == 18
+    assert train_proc[pipeline.feature_columns].shape[1] == 18
+    assert test_proc[pipeline.feature_columns].shape[1] == 18
+    assert not train_proc.isna().any().any()
 
 
 def test_scaler_fitted_on_train_only():
