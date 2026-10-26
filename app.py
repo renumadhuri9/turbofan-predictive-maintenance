@@ -27,6 +27,29 @@ def load_artifacts():
 def main():
     st.title("✈️ Turbofan Predictive Maintenance Dashboard")
 
+    # Inject custom CSS for metric cards
+    st.markdown("""
+    <style>
+    .metric-card {
+        background-color: #262730;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        text-align: center;
+        margin: 10px 0;
+    }
+    .metric-title {
+        font-size: 1.1rem;
+        color: #e0e0e0;
+        margin-bottom: 10px;
+    }
+    .metric-value {
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     try:
         scaler, pca_model, rf_model = load_artifacts()
     except FileNotFoundError as e:
@@ -89,6 +112,8 @@ def main():
 
     # Main panel logic
     if sample_vector is not None:
+        tab1, tab2 = st.tabs(['Real-time Monitoring', 'Algorithm Explainability'])
+
         # Prediction
         scaled_sample = scaler.transform(sample_vector.reshape(1, -1))
         pca_sample = pca_model.transform(scaled_sample)
@@ -98,110 +123,123 @@ def main():
         confidence = np.max(pred_proba)
 
         if pred_class == "Healthy":
-            status_color = "green"
+            status_color = "#2ecc71" # green
             rul_est = "> 30"
         elif pred_class == "Warning":
-            status_color = "orange"
+            status_color = "#f39c12" # orange
             rul_est = "16 - 30"
         else:
-            status_color = "red"
+            status_color = "#e74c3c" # red
             rul_est = "≤ 15"
 
-        col1, col2, col3 = st.columns(3)
+        with tab1:
+            col1, col2, col3 = st.columns(3)
 
-        with col1:
-            st.markdown(f"### Health Status")
-            st.markdown(f"<h2 style='color: {status_color};'>{pred_class}</h2>", unsafe_allow_html=True)
+            with col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-title">Health Status</div>
+                    <div class="metric-value" style="color: {status_color};">{pred_class}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-        with col2:
-            st.markdown(f"### Estimated RUL (Cycles)")
-            st.markdown(f"<h2>{rul_est}</h2>", unsafe_allow_html=True)
+            with col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-title">Estimated RUL (Cycles)</div>
+                    <div class="metric-value">{rul_est}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-        with col3:
-            st.markdown(f"### Confidence Score")
-            st.markdown(f"<h2>{confidence:.2%}</h2>", unsafe_allow_html=True)
+            with col3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-title">Confidence Score</div>
+                    <div class="metric-value">{confidence:.2%}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
-        st.markdown("---")
-        st.subheader("Top Anomalous Sensors")
+        with tab2:
+            st.subheader("Top Anomalous Sensors")
 
-        # Explainability
-        # get_top_fault_sensors returns a list of string features
-        top_sensors = get_top_fault_sensors(sample_vector, top_n=5)
+            # Explainability
+            # get_top_fault_sensors returns a list of string features
+            top_sensors = get_top_fault_sensors(sample_vector, top_n=5)
 
-        # We want to display the anomaly score for the plot, so we re-compute them for the bar chart
-        rf_importances = rf_model.feature_importances_
-        pca_components = pca_model.components_
-        original_importances = np.dot(rf_importances, np.abs(pca_components))
-        scaled_sample_flat = scaled_sample.flatten()
-        anomaly_scores = np.abs(scaled_sample_flat) * original_importances
+            # We want to display the anomaly score for the plot, so we re-compute them for the bar chart
+            rf_importances = rf_model.feature_importances_
+            pca_components = pca_model.components_
+            original_importances = np.dot(rf_importances, np.abs(pca_components))
+            scaled_sample_flat = scaled_sample.flatten()
+            anomaly_scores = np.abs(scaled_sample_flat) * original_importances
 
-        # Map back scores for the top sensors
-        scores = []
-        for sensor in top_sensors:
-            if sensor in feature_names:
-                idx = feature_names.index(sensor)
-                scores.append(anomaly_scores[idx])
-            else:
-                scores.append(0.0)
+            # Map back scores for the top sensors
+            scores = []
+            for sensor in top_sensors:
+                if sensor in feature_names:
+                    idx = feature_names.index(sensor)
+                    scores.append(anomaly_scores[idx])
+                else:
+                    scores.append(0.0)
 
-        fig_bar = px.bar(
-            x=top_sensors,
-            y=scores,
-            labels={'x': 'Sensor', 'y': 'Anomaly Score'},
-            title="Sensor Anomaly Scores"
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
+            fig_bar = px.bar(
+                x=top_sensors,
+                y=scores,
+                labels={'x': 'Sensor', 'y': 'Anomaly Score'},
+                title="Sensor Anomaly Scores"
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
 
-        st.markdown("---")
-        with st.expander("View PCA Component Projections"):
-            # Sample data for scatter plot baselines
-            try:
-                # Get a slightly larger sample from training data for context
-                train_data = pd.read_csv('data/raw/train_FD001.txt', sep=r'\s+', header=None, nrows=1000)
-                train_data.columns = ['engine_id', 'cycle', 'setting_1', 'setting_2', 'setting_3'] + [f's_{i}' for i in range(1, 22)]
+            st.markdown("---")
+            with st.expander("View PCA Component Projections"):
+                # Sample data for scatter plot baselines
+                try:
+                    # Get a slightly larger sample from training data for context
+                    train_data = pd.read_csv('data/raw/train_FD001.txt', sep=r'\s+', header=None, nrows=1000)
+                    train_data.columns = ['engine_id', 'cycle', 'setting_1', 'setting_2', 'setting_3'] + [f's_{i}' for i in range(1, 22)]
 
-                # Get max cycle per engine to calculate RUL
-                max_cycles = train_data.groupby('engine_id')['cycle'].max()
-                train_data['RUL'] = train_data.apply(lambda row: max_cycles[row['engine_id']] - row['cycle'], axis=1)
+                    # Get max cycle per engine to calculate RUL
+                    max_cycles = train_data.groupby('engine_id')['cycle'].max()
+                    train_data['RUL'] = train_data.apply(lambda row: max_cycles[row['engine_id']] - row['cycle'], axis=1)
 
-                # Add hazard class
-                conditions = [
-                    (train_data['RUL'] > 30),
-                    (train_data['RUL'] > 15) & (train_data['RUL'] <= 30),
-                    (train_data['RUL'] <= 15)
-                ]
-                train_data['hazard_class'] = np.select(conditions, ['Healthy', 'Warning', 'Critical'], default='Unknown')
+                    # Add hazard class
+                    conditions = [
+                        (train_data['RUL'] > 30),
+                        (train_data['RUL'] > 15) & (train_data['RUL'] <= 30),
+                        (train_data['RUL'] <= 15)
+                    ]
+                    train_data['hazard_class'] = np.select(conditions, ['Healthy', 'Warning', 'Critical'], default='Unknown')
 
-                # Transform baseline
-                X_base = train_data[feature_names]
-                X_base_scaled = scaler.transform(X_base)
-                X_base_pca = pca_model.transform(X_base_scaled)
+                    # Transform baseline
+                    X_base = train_data[feature_names]
+                    X_base_scaled = scaler.transform(X_base)
+                    X_base_pca = pca_model.transform(X_base_scaled)
 
-                df_pca = pd.DataFrame(X_base_pca[:, :2], columns=['PCA Component 1', 'PCA Component 2'])
-                df_pca['Status'] = train_data['hazard_class']
+                    df_pca = pd.DataFrame(X_base_pca[:, :2], columns=['PCA Component 1', 'PCA Component 2'])
+                    df_pca['Status'] = train_data['hazard_class']
 
-                fig_scatter = px.scatter(
-                    df_pca,
-                    x='PCA Component 1',
-                    y='PCA Component 2',
-                    color='Status',
-                    color_discrete_map={'Healthy': 'green', 'Warning': 'orange', 'Critical': 'red'},
-                    title="PCA Projection (Baseline vs Current Sample)",
-                    opacity=0.6
-                )
+                    fig_scatter = px.scatter(
+                        df_pca,
+                        x='PCA Component 1',
+                        y='PCA Component 2',
+                        color='Status',
+                        color_discrete_map={'Healthy': 'green', 'Warning': 'orange', 'Critical': 'red'},
+                        title="PCA Projection (Baseline vs Current Sample)",
+                        opacity=0.6
+                    )
 
-                # Overlay current sample
-                fig_scatter.add_trace(go.Scatter(
-                    x=[pca_sample[0, 0]],
-                    y=[pca_sample[0, 1]],
-                    mode='markers',
-                    marker=dict(size=15, color='black', symbol='star'),
-                    name='Current Sample'
-                ))
+                    # Overlay current sample
+                    fig_scatter.add_trace(go.Scatter(
+                        x=[pca_sample[0, 0]],
+                        y=[pca_sample[0, 1]],
+                        mode='markers',
+                        marker=dict(size=15, color='black', symbol='star'),
+                        name='Current Sample'
+                    ))
 
-                st.plotly_chart(fig_scatter, use_container_width=True)
-            except Exception as e:
-                st.warning(f"Could not load baseline PCA projection: {e}")
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not load baseline PCA projection: {e}")
 
 if __name__ == "__main__":
     main()
