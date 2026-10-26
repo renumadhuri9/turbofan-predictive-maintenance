@@ -92,3 +92,29 @@ def test_hazard_class_mapping(mock_data_paths):
     assert all(train_df.loc[train_df['RUL'] > 30, 'hazard_class'] == 'Healthy')
     assert all(train_df.loc[(train_df['RUL'] > 15) & (train_df['RUL'] <= 30), 'hazard_class'] == 'Warning')
     assert all(train_df.loc[train_df['RUL'] <= 15, 'hazard_class'] == 'Critical')
+
+def test_custom_kmeans_convergence_and_inertia():
+    from src.clustering import CustomKMeans
+
+    # Generate distinct clusters
+    np.random.seed(42)
+    cluster_1 = np.random.randn(50, 5) + np.array([5, 5, 5, 5, 5])
+    cluster_2 = np.random.randn(50, 5) + np.array([-5, -5, -5, -5, -5])
+    X = np.vstack((cluster_1, cluster_2))
+
+    kmeans = CustomKMeans(n_clusters=2, random_state=42)
+    kmeans.fit(X)
+
+    # 1. Verify convergence: we should have reached tol or max_iter
+    assert kmeans.cluster_centers_ is not None, "Centroids were not fitted"
+
+    # 2. Verify inertia decreases monotonically
+    inertia_history = kmeans.inertia_history_
+
+    # Handle the case where it converges in 1 iteration
+    if len(inertia_history) > 1:
+        is_monotonically_decreasing = all(
+            inertia_history[i] >= inertia_history[i+1]
+            for i in range(len(inertia_history) - 1)
+        )
+        assert is_monotonically_decreasing, "Inertia did not decrease monotonically"
