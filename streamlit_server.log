@@ -1,0 +1,66 @@
+
+Collecting usage statistics. To deactivate, set browser.gatherUsageStats to false.
+
+2026-10-26 14:33:08.857 Uvicorn server started on :::8501
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.0.2:8501
+  External URL: http://34.28.228.31:8501
+
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but MinMaxScaler was fitted with feature names
+  warnings.warn(
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but PCA was fitted with feature names
+  warnings.warn(
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but MinMaxScaler was fitted with feature names
+  warnings.warn(
+2026-10-26 14:33:35.403 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but PCA was fitted with feature names
+  warnings.warn(
+2026-10-26 14:33:35.475 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but MinMaxScaler was fitted with feature names
+  warnings.warn(
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but PCA was fitted with feature names
+  warnings.warn(
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but MinMaxScaler was fitted with feature names
+  warnings.warn(
+2026-10-26 14:34:06.034 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but PCA was fitted with feature names
+  warnings.warn(
+2026-10-26 14:34:06.115 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but MinMaxScaler was fitted with feature names
+  warnings.warn(
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but PCA was fitted with feature names
+  warnings.warn(
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but MinMaxScaler was fitted with feature names
+  warnings.warn(
+2026-10-26 14:34:38.137 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+/home/jules/.pyenv/versions/3.12.13/lib/python3.12/site-packages/sklearn/utils/validation.py:2830: UserWarning: X does not have valid feature names, but PCA was fitted with feature names
+  warnings.warn(
+2026-10-26 14:34:38.189 Please replace `use_container_width` with `width`.
+
+`use_container_width` will be removed after 2025-12-31.
+
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+  Stopping...
