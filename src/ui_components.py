@@ -1,204 +1,288 @@
-import streamlit as st
+"""Reusable Streamlit / Plotly components for the dashboard."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Optional
+
 import numpy as np
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
-from src.clustering import CustomKMeans
+import streamlit as st
+from plotly.subplots import make_subplots
 
-def render_sidebar(presets_df, normal_preset, feature_names):
-    # Initialize session state for high-variance sensors
-    if 's_14' not in st.session_state:
-        st.session_state['s_14'] = float(normal_preset['s_14'])
-    if 's_4' not in st.session_state:
-        st.session_state['s_4'] = float(normal_preset['s_4'])
-    if 's_9' not in st.session_state:
-        st.session_state['s_9'] = float(normal_preset['s_9'])
-    if 's_3' not in st.session_state:
-        st.session_state['s_3'] = float(normal_preset['s_3'])
-    if 's_17' not in st.session_state:
-        st.session_state['s_17'] = float(normal_preset['s_17'])
+from src.ui_data import CLASSES, FEATURES, KEY_SENSORS, SENSORS
+from src.ui_theme import C, STATUS_STYLE, rgba, sensor_label, style_fig
 
-    st.sidebar.header("Data Source Configuration")
-    what_if_simulation = st.sidebar.toggle("What-If Simulation", value=False)
-
-    sample_vector = None
-
-    if not what_if_simulation:
-        # Existing Selectbox behavior for normal presets
-        preset_choice = st.sidebar.selectbox("Select Engine Status", ["Normal", "Degrading", "Critical"])
-        selected_row = presets_df[presets_df['Preset'] == preset_choice].iloc[0]
-        sample_vector = selected_row[feature_names].values.astype(np.float64)
-    else:
-        st.sidebar.subheader("What-If Analysis")
-
-        # Reset Button functionality
-        def reset_sliders():
-            st.session_state['s_14'] = float(normal_preset['s_14'])
-            st.session_state['s_4'] = float(normal_preset['s_4'])
-            st.session_state['s_9'] = float(normal_preset['s_9'])
-            st.session_state['s_3'] = float(normal_preset['s_3'])
-            st.session_state['s_17'] = float(normal_preset['s_17'])
-
-        st.sidebar.button("Reset", on_click=reset_sliders)
-
-        # Sliders bound directly to session state
-        st.sidebar.slider("Sensor 14", min_value=8099.0, max_value=8295.0, key="s_14")
-        st.sidebar.slider("Sensor 4", min_value=1380.0, max_value=1445.0, key="s_4")
-        st.sidebar.slider("Sensor 9", min_value=9020.0, max_value=9245.0, key="s_9")
-        st.sidebar.slider("Sensor 3", min_value=1570.0, max_value=1620.0, key="s_3")
-        st.sidebar.slider("Sensor 17", min_value=388.0, max_value=400.0, key="s_17")
-
-        # Construct vector using state values for modified sensors
-        manual_vector = []
-        for feat in feature_names:
-            if feat in ['s_14', 's_4', 's_9', 's_3', 's_17']:
-                manual_vector.append(st.session_state[feat])
-            else:
-                manual_vector.append(float(normal_preset[feat]))
-
-        sample_vector = np.array(manual_vector, dtype=np.float64)
-
-    return sample_vector
+PLOT_CFG = {"displayModeBar": False}
 
 
-def render_metrics(pred_class, rul_est, confidence, status_color):
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-title">Health Status</div>
-            <div class="metric-value" style="color: {status_color};">{pred_class}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-title">Estimated RUL (Cycles)</div>
-            <div class="metric-value">{rul_est}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <div class="metric-title">Confidence Score</div>
-            <div class="metric-value">{confidence:.2%}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-
-def render_plots(sample_vector, scaled_sample, pca_sample, scaler, pca_model, rf_model, feature_names, top_sensors):
-    st.subheader("Top Anomalous Sensors")
-
-    # We want to display the anomaly score for the plot, so we re-compute them for the bar chart
-    rf_importances = rf_model.feature_importances_
-    pca_components = pca_model.components_
-    original_importances = np.dot(rf_importances, np.abs(pca_components))
-    scaled_sample_flat = scaled_sample.flatten()
-    anomaly_scores = np.abs(scaled_sample_flat) * original_importances
-
-    # Map back scores for the top sensors
-    scores = []
-    gini_importances = []
-    raw_values = []
-    for sensor in top_sensors:
-        if sensor in feature_names:
-            idx = feature_names.index(sensor)
-            scores.append(anomaly_scores[idx])
-            gini_importances.append(original_importances[idx])
-            raw_values.append(sample_vector[idx])
-        else:
-            scores.append(0.0)
-            gini_importances.append(0.0)
-            raw_values.append(0.0)
-
-    bar_df = pd.DataFrame({
-        'Sensor': top_sensors,
-        'Anomaly Score': scores,
-        'Gini Importance': gini_importances,
-        'Raw Value': raw_values
-    })
-
-    fig_bar = px.bar(
-        bar_df,
-        x='Sensor',
-        y='Anomaly Score',
-        hover_data=['Gini Importance', 'Raw Value'],
-        title="Sensor Anomaly Scores"
+def _card(label: str, value: str, sub: str = "", color: str = C["cyan"], extra: str = "") -> str:
+    return (
+        f'<div class="card {extra}" style="--accent:{color}">'
+        f'<div class="label">{label}</div>'
+        f'<div class="value" style="color:{color}">{value}</div>'
+        f'<div class="sub">{sub}</div></div>'
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.markdown("---")
-    with st.expander("View PCA Component Projections"):
-        # Sample data for scatter plot baselines
-        try:
-            # Get a slightly larger sample from training data for context
-            train_data = pd.read_csv('data/raw/train_FD001.txt', sep=r'\s+', header=None, nrows=1000)
-            train_data.columns = ['engine_id', 'cycle', 'setting_1', 'setting_2', 'setting_3'] + [f's_{i}' for i in range(1, 22)]
 
-            # Get max cycle per engine to calculate RUL
-            max_cycles = train_data.groupby('engine_id')['cycle'].max()
-            train_data['RUL'] = train_data.apply(lambda row: max_cycles[row['engine_id']] - row['cycle'], axis=1)
+def hero(mode: str, live: bool = False) -> None:
+    """Page header with mode pill and optional LIVE badge."""
+    live_pill = '<span class="pill live">LIVE REPLAY</span>' if live else ""
+    st.markdown(
+        '<div class="hero"><h1>✈️ Turbofan Health Monitor</h1>'
+        f'<p>{live_pill}<span class="pill">{mode}</span>'
+        "NASA C-MAPSS FD001 · PCA + Random Forest · explainable remaining-life triage</p></div>",
+        unsafe_allow_html=True,
+    )
 
-            # Add hazard class
-            conditions = [
-                (train_data['RUL'] > 30),
-                (train_data['RUL'] > 15) & (train_data['RUL'] <= 30),
-                (train_data['RUL'] <= 15)
-            ]
-            train_data['hazard_class'] = np.select(conditions, ['Healthy', 'Warning', 'Critical'], default='Unknown')
 
-            # Transform baseline
-            X_base = train_data[feature_names]
-            X_base_scaled = scaler.transform(X_base)
-            X_base_pca = pca_model.transform(X_base_scaled)
+def status_cards(a: Dict[str, Any], prev_risk: Optional[float] = None, true_status: Optional[str] = None) -> None:
+    """Four headline KPI cards."""
+    s = STATUS_STYLE[a["status"]]
+    col = s["color"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.markdown(
+        _card("Health status", f'<span class="dot"></span>{a["status"]}', s["headline"], col, f"glow-{a['status']}"),
+        unsafe_allow_html=True,
+    )
+    sub = "Predicted RUL zone"
+    if true_status is not None:
+        ok = "✅ matches" if true_status == a["status"] else f"⚠️ actual: {true_status}"
+        sub = f"Predicted zone · {ok}"
+    c2.markdown(_card("Remaining useful life", s["zone"], sub, col), unsafe_allow_html=True)
+    c3.markdown(
+        _card("Model confidence", f'{a["confidence"]:.1%}', "Top class probability", C["cyan"]),
+        unsafe_allow_html=True,
+    )
+    arrow = ""
+    if prev_risk is not None:
+        d = a["risk"] - prev_risk
+        arrow = f"{'▲' if d > 0.05 else '▼' if d < -0.05 else '■'} {d:+.1f} vs previous cycle"
+    c4.markdown(
+        _card("Failure risk index", f'{a["risk"]:.0f}<span style="font-size:1rem"> / 100</span>', arrow or "0 = healthy · 100 = critical", C["violet"]),
+        unsafe_allow_html=True,
+    )
 
-            # Cluster baseline data
-            kmeans = CustomKMeans(n_clusters=3, random_state=42)
-            kmeans.fit(X_base_pca[:, :2])
-            cluster_labels = kmeans.predict(X_base_pca[:, :2])
 
-            df_pca = pd.DataFrame(X_base_pca[:, :2], columns=['PCA Component 1', 'PCA Component 2'])
-            df_pca['Cluster'] = cluster_labels
-            df_pca['Status'] = train_data['hazard_class']
+def advice_box(status: str) -> None:
+    """Colour-coded recommendation under the gauge."""
+    s = STATUS_STYLE[status]
+    st.markdown(
+        f'<div class="advice" style="--accent:{s["color"]}"><b>{s["headline"]}.</b> {s["advice"]}</div>',
+        unsafe_allow_html=True,
+    )
 
-            # Map clusters to approximate health states based on the dominant class (optional context) or just color them uniquely
-            # To keep it simple, we'll assign distinct colors to clusters and name them Cluster 0, 1, 2
-            cluster_colors = {0: '#2ecc71', 1: '#f39c12', 2: '#e74c3c'}
-            cluster_names = {0: 'Cluster 0', 1: 'Cluster 1', 2: 'Cluster 2'}
 
-            fig_scatter = go.Figure()
+def risk_gauge(a: Dict[str, Any], prev_risk: Optional[float] = None) -> go.Figure:
+    """Semi-circular gauge for the failure-risk index."""
+    col = STATUS_STYLE[a["status"]]["color"]
+    mode = "gauge+number" + ("+delta" if prev_risk is not None else "")
+    fig = go.Figure(
+        go.Indicator(
+            mode=mode,
+            value=a["risk"],
+            number={"font": {"size": 54, "color": col}, "valueformat": ".0f"},
+            delta={"reference": prev_risk or 0, "increasing": {"color": C["red"]}, "decreasing": {"color": C["green"]}, "valueformat": ".1f"},
+            title={"text": "Failure risk index", "font": {"size": 15, "color": C["muted"]}},
+            gauge={
+                "axis": {"range": [0, 100], "tickcolor": C["muted"]},
+                "bar": {"color": col, "thickness": 0.3},
+                "bgcolor": "rgba(0,0,0,0)",
+                "borderwidth": 0,
+                "steps": [
+                    {"range": [0, 25], "color": rgba(C["green"], 0.18)},
+                    {"range": [25, 60], "color": rgba(C["amber"], 0.18)},
+                    {"range": [60, 100], "color": rgba(C["red"], 0.2)},
+                ],
+            },
+        )
+    )
+    return style_fig(fig, 300, margin=dict(l=45, r=45, t=60, b=10))
 
-            # Add trace for each cluster
-            for cluster_id in sorted(df_pca['Cluster'].unique()):
-                cluster_data = df_pca[df_pca['Cluster'] == cluster_id]
-                fig_scatter.add_trace(go.Scatter(
-                    x=cluster_data['PCA Component 1'],
-                    y=cluster_data['PCA Component 2'],
-                    mode='markers',
-                    marker=dict(color=cluster_colors.get(cluster_id, 'grey'), size=6, opacity=0.6),
-                    name=cluster_names.get(cluster_id, f'Cluster {cluster_id}')
-                ))
 
-            # Overlay current sample
-            fig_scatter.add_trace(go.Scatter(
-                x=[pca_sample[0, 0]],
-                y=[pca_sample[0, 1]],
-                mode='markers',
-                marker=dict(size=15, color='white', line=dict(color='black', width=2), symbol='star'),
-                name='Current Sample'
-            ))
+def probability_bars(a: Dict[str, Any]) -> go.Figure:
+    """Class-probability bars."""
+    p = a["proba"]
+    colors = [STATUS_STYLE[c]["color"] for c in CLASSES]
+    fig = go.Figure(
+        go.Bar(
+            y=CLASSES,
+            x=[p[c] * 100 for c in CLASSES],
+            orientation="h",
+            marker=dict(color=colors, line=dict(width=0)),
+            text=[f"{p[c]:.1%}" for c in CLASSES],
+            textposition="auto",
+            hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
+        )
+    )
+    fig.update_xaxes(range=[0, 100], title="Probability (%)")
+    fig.update_yaxes(autorange="reversed")
+    return style_fig(fig, 200, title=dict(text="Class probabilities", font=dict(size=15, color=C["muted"])), margin=dict(l=10, r=10, t=45, b=35))
 
-            fig_scatter.update_layout(
-                title="PCA Projection (Clustered Baseline vs Current Sample)",
-                xaxis_title="PCA Component 1",
-                yaxis_title="PCA Component 2",
-                dragmode="zoom",
-                showlegend=True
+
+def trajectory_chart(traj: pd.DataFrame, cycle: int) -> go.Figure:
+    """Stacked class-probability timeline with an 'actual status' strip and a moving cursor."""
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.82, 0.18], vertical_spacing=0.04)
+    for cls in CLASSES:
+        col = STATUS_STYLE[cls]["color"]
+        fig.add_trace(
+            go.Scatter(
+                x=traj["cycle"], y=traj[cls] * 100, name=cls, mode="lines", stackgroup="p",
+                line=dict(width=0.6, color=col), fillcolor=rgba(col, 0.6),
+                hovertemplate=f"{cls}: " + "%{y:.1f}%<extra></extra>",
+            ),
+            row=1, col=1,
+        )
+    fig.add_trace(
+        go.Bar(
+            x=traj["cycle"], y=np.ones(len(traj)), showlegend=False,
+            marker=dict(color=[STATUS_STYLE[s]["color"] for s in traj["Status"]], line=dict(width=0)),
+            customdata=np.stack([traj["Status"], traj["RUL"]], axis=-1),
+            hovertemplate="Actual: %{customdata[0]} (RUL %{customdata[1]})<extra></extra>",
+        ),
+        row=2, col=1,
+    )
+    last = int(traj["cycle"].max())
+    if cycle < last:
+        fig.add_vrect(x0=cycle, x1=last, fillcolor="rgba(11,18,32,.6)", line_width=0, layer="above", row="all", col="all")
+    fig.add_vline(x=cycle, line=dict(color="white", width=2, dash="dot"), row="all", col="all")
+    fig.update_yaxes(title="Probability (%)", range=[0, 100], row=1, col=1)
+    fig.update_yaxes(title="Actual", showticklabels=False, range=[0, 1], row=2, col=1)
+    fig.update_xaxes(title="Flight cycle", row=2, col=1)
+    fig.update_layout(bargap=0, hovermode="x unified")
+    return style_fig(fig, 400, title=dict(text="Health timeline — predicted probabilities vs actual status", font=dict(size=15, color=C["muted"])))
+
+
+def sensor_trends(traj: pd.DataFrame, scaled: pd.DataFrame, sensors: list[str], cycle: int) -> go.Figure:
+    """Scaled sensor traces that 'grow' as the replay advances."""
+    palette = [C["cyan"], C["violet"], C["amber"], C["green"], C["red"], "#f472b6"]
+    mask = traj["cycle"] <= cycle
+    fig = go.Figure()
+    for i, s in enumerate(sensors):
+        col = palette[i % len(palette)]
+        y = scaled.loc[mask, s]
+        fig.add_trace(go.Scatter(x=traj.loc[mask, "cycle"], y=y, name=sensor_label(s), mode="lines", line=dict(width=2.2, color=col)))
+        fig.add_trace(go.Scatter(x=[cycle], y=[y.iloc[-1]], mode="markers", showlegend=False, marker=dict(size=10, color=col, line=dict(color="white", width=1.5)), hoverinfo="skip"))
+    fig.update_xaxes(range=[traj["cycle"].min(), traj["cycle"].max()], title="Flight cycle")
+    fig.update_yaxes(range=[-0.02, 1.02], title="Scaled value (0–1)")
+    return style_fig(fig, 340, title=dict(text="Sensor drift", font=dict(size=15, color=C["muted"])))
+
+
+def contribution_bars(a: Dict[str, Any], top_n: int) -> go.Figure:
+    """Horizontal bars: which sensors push the prediction away from 'healthy'."""
+    df = a["contrib"].head(top_n).iloc[::-1]
+    top = float(a["contrib"]["Score"].max())
+    fig = go.Figure(
+        go.Bar(
+            y=[sensor_label(s) for s in df["Feature"]],
+            x=df["Score"],
+            orientation="h",
+            marker=dict(color=df["Score"], colorscale=[[0, C["cyan"]], [0.5, C["violet"]], [1, C["red"]]], cmin=0, cmax=max(top, 0.1), line=dict(width=0)),
+            text=[f"{'↑' if d > 0 else '↓'} {abs(p):.1f}%" for d, p in zip(df["Direction"], df["DeltaPct"])],
+            textposition="outside",
+            customdata=np.stack([df["Raw"], df["HealthyRaw"]], axis=-1),
+            hovertemplate="%{y}<br>Score: %{x:.3f}<br>Value: %{customdata[0]:.2f} (healthy avg %{customdata[1]:.2f})<extra></extra>",
+        )
+    )
+    fig.update_xaxes(range=[0, max(top * 1.3, 0.13)], title="Fault contribution score")
+    return style_fig(fig, max(260, 52 * top_n), title=dict(text="Top fault-contributing sensors (label = shift vs healthy average)", font=dict(size=15, color=C["muted"])))
+
+
+def fingerprint_radar(a: Dict[str, Any], bg: Dict[str, Any]) -> go.Figure:
+    """Radar comparing the current reading with the average Healthy and Critical engine."""
+    idx = [FEATURES.index(s) for s in SENSORS]
+    labels = [sensor_label(s) for s in SENSORS]
+
+    def trace(vals, name, color, fill, dash=None, width=2):
+        v = list(np.clip(vals, 0, 1)) + [float(np.clip(vals[0], 0, 1))]
+        return go.Scatterpolar(r=v, theta=labels + [labels[0]], name=name, fill=fill, fillcolor=rgba(color, 0.18), line=dict(color=color, width=width, dash=dash))
+
+    fig = go.Figure()
+    fig.add_trace(trace(bg["scaled_mean"]["Healthy"][idx], "Healthy average", C["green"], "toself", "dot"))
+    fig.add_trace(trace(bg["scaled_mean"]["Critical"][idx], "Critical average", C["red"], "none", "dash"))
+    fig.add_trace(trace(a["scaled"][idx], "Current reading", C["cyan"], "toself", None, 3))
+    fig.update_layout(polar=dict(bgcolor="rgba(0,0,0,0)", radialaxis=dict(range=[0, 1], gridcolor="rgba(148,163,184,.18)", tickfont=dict(size=9)), angularaxis=dict(gridcolor="rgba(148,163,184,.18)", tickfont=dict(size=11))))
+    return style_fig(fig, 420, title=dict(text="Sensor fingerprint", font=dict(size=15, color=C["muted"])), margin=dict(l=50, r=50, t=50, b=40))
+
+
+def key_sensor_metrics(a: Dict[str, Any], bg: Dict[str, Any]) -> None:
+    """st.metric row for the five key sensors, with delta vs the healthy average."""
+    cols = st.columns(len(KEY_SENSORS))
+    for col, s in zip(cols, KEY_SENSORS):
+        i = FEATURES.index(s)
+        val, base = a["vector"][i], bg["raw_mean"]["Healthy"][i]
+        col.metric(sensor_label(s), f"{val:,.1f}", f"{100 * (val - base) / abs(base):+.2f}%", delta_color="off")
+
+
+def pca_map(bg: Dict[str, Any], pca, a: Dict[str, Any], traj: Optional[pd.DataFrame] = None, cycle: Optional[int] = None) -> go.Figure:
+    """Training data in PC1/PC2 space, with the current sample (and replay trail)."""
+    ev = pca.explained_variance_ratio_ * 100
+    fig = go.Figure()
+    for cls, alpha, size in (("Healthy", 0.22, 5), ("Warning", 0.5, 6), ("Critical", 0.6, 6)):
+        d = bg["points"][bg["points"]["Status"] == cls]
+        fig.add_trace(go.Scattergl(x=d["PC1"], y=d["PC2"], mode="markers", name=f"{cls} (training)", marker=dict(size=size, color=rgba(STATUS_STYLE[cls]["color"], alpha)), hoverinfo="skip"))
+    if traj is not None and cycle is not None:
+        t = traj[traj["cycle"] <= cycle]
+        fig.add_trace(go.Scatter(x=t["PC1"], y=t["PC2"], mode="lines", name="Engine trail", line=dict(color="rgba(255,255,255,.55)", width=2), hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[a["pcs"][0]], y=[a["pcs"][1]], mode="markers", name="Current", marker=dict(symbol="star", size=22, color="white", line=dict(color=STATUS_STYLE[a["status"]]["color"], width=3))))
+    fig.update_xaxes(title=f"PC1 ({ev[0]:.1f}% of variance)")
+    fig.update_yaxes(title=f"PC2 ({ev[1]:.1f}% of variance)")
+    return style_fig(fig, 470, title=dict(text="Where this engine sits in sensor space", font=dict(size=15, color=C["muted"])))
+
+
+def variance_chart(pca) -> go.Figure:
+    """Explained-variance bars + cumulative line (interactive scree plot)."""
+    ev = pca.explained_variance_ratio_ * 100
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(x=[f"PC{i + 1}" for i in range(len(ev))], y=ev, name="Per component", marker=dict(color=C["cyan"])), secondary_y=False)
+    fig.add_trace(go.Scatter(x=[f"PC{i + 1}" for i in range(len(ev))], y=np.cumsum(ev), name="Cumulative", mode="lines+markers", line=dict(color=C["amber"], width=3)), secondary_y=True)
+    fig.update_yaxes(title="Variance (%)", secondary_y=False)
+    fig.update_yaxes(title="Cumulative (%)", range=[0, 100], secondary_y=True, showgrid=False)
+    return style_fig(fig, 340, title=dict(text="PCA variance explained", font=dict(size=15, color=C["muted"])))
+
+
+def model_lab() -> None:
+    """Interactive benchmark comparison + confusion matrices from ``artifacts/``."""
+    try:
+        df = pd.read_csv("artifacts/benchmark_metrics.csv")
+    except Exception as exc:
+        st.warning(f"Benchmark file not found: {exc}")
+        return
+    lat = [c for c in df.columns if "Latency" in c][0]
+    df = df.rename(columns={lat: "Latency (ms / 1k samples)"})
+    df = df.loc[:, ~df.columns.str.startswith("Unnamed")]
+    metrics = [c for c in ("Test Accuracy", "Macro F1-Score", "Precision", "Recall") if c in df.columns]
+
+    left, right = st.columns([1, 1])
+    with left:
+        metric = st.segmented_control("Compare models by", metrics, default="Macro F1-Score", key="lab_metric") or metrics[0]
+        d = df.sort_values(metric)
+        best = d[metric].idxmax()
+        fig = go.Figure(go.Bar(y=d["Model Name"], x=d[metric], orientation="h", marker=dict(color=[C["cyan"] if i == best else rgba(C["muted"], 0.55) for i in d.index]), text=[f"{v:.3f}" for v in d[metric]], textposition="outside"))
+        fig.update_xaxes(range=[0, 1.08])
+        st.plotly_chart(style_fig(fig, 360, title=dict(text=f"{metric} by model", font=dict(size=15, color=C["muted"]))), key="lab_bar", config=PLOT_CFG)
+    with right:
+        st.markdown("&nbsp;")
+        fig2 = go.Figure(
+            go.Scatter(
+                x=df["Latency (ms / 1k samples)"], y=df["Macro F1-Score"], mode="markers+text", text=df["Model Name"], textposition="top center",
+                marker=dict(size=12 + 16 * (df["Test Accuracy"] - df["Test Accuracy"].min()) / max(df["Test Accuracy"].max() - df["Test Accuracy"].min(), 1e-9), color=C["violet"], opacity=0.75, line=dict(color="white", width=1)),
+                hovertemplate="%{text}<br>Latency %{x:.2f} ms<br>Macro F1 %{y:.3f}<extra></extra>",
             )
+        )
+        fig2.update_xaxes(type="log", title="Inference latency per 1,000 samples (ms, log scale)")
+        fig2.update_yaxes(title="Macro F1")
+        st.plotly_chart(style_fig(fig2, 360, title=dict(text="Speed vs quality (bubble size = accuracy)", font=dict(size=15, color=C["muted"]))), key="lab_scatter", config=PLOT_CFG)
 
-            st.plotly_chart(fig_scatter, use_container_width=True)
-        except Exception as e:
-            st.warning(f"Could not load baseline PCA projection: {e}")
+    st.caption("Accuracy sits around 98% for almost every model because ~85% of training rows are *Healthy*. Macro F1 treats all three classes equally, so it is the fairer yardstick here.")
+    st.dataframe(
+        df, hide_index=True,
+        column_config={c: st.column_config.ProgressColumn(c, min_value=0, max_value=1, format="%.3f") for c in ("Train Accuracy", "Test Accuracy", "Precision", "Recall", "Macro F1-Score") if c in df.columns},
+    )
+    with st.expander("Confusion matrices"):
+        c1, c2 = st.columns(2)
+        for col, (title, path) in zip((c1, c2), (("Random Forest", "artifacts/random_forest_confusion_matrix.png"), ("MLP", "artifacts/mlp_confusion_matrix.png"))):
+            try:
+                col.image(path, caption=title, width="stretch")
+            except Exception:
+                col.info(f"{title} confusion matrix not found.")
